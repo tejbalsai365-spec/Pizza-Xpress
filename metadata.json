@@ -1,0 +1,6 @@
+{
+  "name": "Pizza Xpress",
+  "description": "Modern, professional food ordering mobile app for Pizza Xpress with custom menu management, Zomato-inspired UX, interactive cart, and WhatsApp order integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
