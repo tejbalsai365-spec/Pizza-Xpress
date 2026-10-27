@@ -13,12 +13,18 @@ import {
   Product,
   StoreSettings,
 } from '../types';
+import {
+  syncProductsToSupabase,
+  syncSettingsToSupabase,
+  syncCategoriesToSupabase,
+  syncOffersToSupabase,
+} from './supabaseClient';
 
 const STORAGE_KEYS = {
-  PRODUCTS: 'pizza_xpress_products_v7',
+  PRODUCTS: 'pizza_xpress_products_v8',
   CATEGORIES: 'pizza_xpress_categories_v3',
   OFFERS: 'pizza_xpress_offers_v1',
-  SETTINGS: 'pizza_xpress_settings_v1',
+  SETTINGS: 'pizza_xpress_settings_v2',
   ORDERS: 'pizza_xpress_orders_v1',
   ADMIN_PIN: 'pizza_xpress_admin_pin_v1',
 };
@@ -37,11 +43,11 @@ export const getStoredProducts = (): Product[] => {
               p.category === 'Cold Drinks')
         )
         .map((p) => {
-          if (p.id === 'px-k1' && (p.imageUrl.includes('unsplash') || !p.imageUrl.includes('cheesy_kulhad'))) {
+          if (p.id === 'px-k1') {
             const initial = INITIAL_PRODUCTS.find((init) => init.id === 'px-k1');
             return initial ? { ...p, imageUrl: initial.imageUrl } : p;
           }
-          if (p.id === 'px-k2' && (p.imageUrl.includes('unsplash') || !p.imageUrl.includes('paneer_kulhad'))) {
+          if (p.id === 'px-k2') {
             const initial = INITIAL_PRODUCTS.find((init) => init.id === 'px-k2');
             return initial ? { ...p, imageUrl: initial.imageUrl } : p;
           }
@@ -60,6 +66,7 @@ export const getStoredProducts = (): Product[] => {
 export const saveProducts = (products: Product[]) => {
   try {
     localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    syncProductsToSupabase(products).catch(() => {});
   } catch (e) {
     console.error('Failed to save products', e);
   }
@@ -89,6 +96,7 @@ export const getStoredCategories = (): Category[] => {
 export const saveCategories = (categories: Category[]) => {
   try {
     localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+    syncCategoriesToSupabase(categories).catch(() => {});
   } catch (e) {
     console.error('Failed to save categories', e);
   }
@@ -108,6 +116,7 @@ export const getStoredOffers = (): Offer[] => {
 export const saveOffers = (offers: Offer[]) => {
   try {
     localStorage.setItem(STORAGE_KEYS.OFFERS, JSON.stringify(offers));
+    syncOffersToSupabase(offers).catch(() => {});
   } catch (e) {
     console.error('Failed to save offers', e);
   }
@@ -134,6 +143,7 @@ export const getStoredSettings = (): StoreSettings => {
 export const saveSettings = (settings: StoreSettings) => {
   try {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    syncSettingsToSupabase(settings).catch(() => {});
   } catch (e) {
     console.error('Failed to save settings', e);
   }

@@ -28,6 +28,14 @@ import {
   Phone,
   Power,
   Image as ImageIcon,
+  Palette,
+  Cloud,
+  RefreshCw,
+  Copy,
+  ExternalLink,
+  Sparkles,
+  Globe,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   exportStoreDataJson,
@@ -36,7 +44,21 @@ import {
   resetStoreToDefaults,
   setAdminPin,
 } from '../services/storeService';
-import cheesyKulhadImg from '../assets/cheesy_kulhad_pizza_custom.png';
+import {
+  getSupabaseConfigFromStorage,
+  saveSupabaseConfigToStorage,
+  testSupabaseConnection,
+  fetchProductsFromSupabase,
+  syncProductsToSupabase,
+  fetchSettingsFromSupabase,
+  syncSettingsToSupabase,
+  fetchCategoriesFromSupabase,
+  syncCategoriesToSupabase,
+  fetchOffersFromSupabase,
+  syncOffersToSupabase,
+  SUPABASE_SETUP_SQL,
+} from '../services/supabaseClient';
+import desiCheesyKulhadNewImg from '../assets/desi_cheesy_kulhad_pizza_new.png';
 import paneerKulhadImg from '../assets/paneer_kulhad_pizza_custom.png';
 
 interface AdminPanelProps {
@@ -54,10 +76,19 @@ interface AdminPanelProps {
   onUpdateOrderStatus: (orderId: string, status: Order['status']) => void;
 }
 
+const COLOR_PRESETS = [
+  { name: 'Pizza Red', primary: '#dc2626', accent: '#f59e0b' },
+  { name: 'Zomato Crimson', primary: '#e11d48', accent: '#fbbf24' },
+  { name: 'Fiery Orange', primary: '#ea580c', accent: '#facc15' },
+  { name: 'Pure Veg Emerald', primary: '#059669', accent: '#34d399' },
+  { name: 'Royal Purple', primary: '#7c3aed', accent: '#fbbf24' },
+  { name: 'Midnight Blue', primary: '#2563eb', accent: '#38bdf8' },
+];
+
 const PRESET_FOOD_IMAGES = [
   {
-    name: 'Desi Cheesy Kulhad Pizza',
-    url: cheesyKulhadImg,
+    name: 'Desi Cheesy Kulhad Pizza (Clay Pot)',
+    url: desiCheesyKulhadNewImg,
   },
   {
     name: 'Paneer Tikka Kulhad Pizza',
@@ -76,6 +107,10 @@ const PRESET_FOOD_IMAGES = [
     url: 'https://images.unsplash.com/photo-1574071318508-1cdbab80d002?auto=format&fit=crop&w=800&q=80',
   },
   {
+    name: 'Chilled Sting Energy Drink',
+    url: 'https://images.unsplash.com/photo-1622543925917-763c34d1a86e?auto=format&fit=crop&w=800&q=80',
+  },
+  {
     name: 'Chilled Cola Bottle',
     url: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=800&q=80',
   },
@@ -86,10 +121,6 @@ const PRESET_FOOD_IMAGES = [
   {
     name: 'Lemon Lime Soda',
     url: 'https://images.unsplash.com/photo-1625772299848-391b6a87d7b3?auto=format&fit=crop&w=800&q=80',
-  },
-  {
-    name: 'Chilled Sting Energy Drink',
-    url: 'https://images.unsplash.com/photo-1622543925917-763c34d1a86e?auto=format&fit=crop&w=800&q=80',
   },
 ];
 
@@ -112,8 +143,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [pinError, setPinError] = useState(false);
 
   const [activeTab, setActiveTab] = useState<
-    'products' | 'categories' | 'offers' | 'settings' | 'orders' | 'database'
+    'products' | 'categories' | 'offers' | 'branding' | 'settings' | 'orders' | 'database'
   >('products');
+
+  // Supabase Configuration & Sync State
+  const initialSupa = getSupabaseConfigFromStorage();
+  const [supaUrl, setSupaUrl] = useState(initialSupa.url);
+  const [supaAnonKey, setSupaAnonKey] = useState(initialSupa.anonKey);
+  const [showAnonKey, setShowAnonKey] = useState(false);
+  const [supaStatus, setSupaStatus] = useState<{
+    testing: boolean;
+    message: string;
+    success?: boolean;
+  } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [copiedSql, setCopiedSql] = useState(false);
 
   // Product Editing / Creation State
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -143,6 +191,111 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   });
 
   if (!isOpen) return null;
+
+  // Supabase Actions
+  const handleTestSupabase = async () => {
+    if (!supaUrl.trim() || !supaAnonKey.trim()) {
+      setSupaStatus({
+        testing: false,
+        success: false,
+        message: 'Please provide both Project URL and Anon Public Key.',
+      });
+      return;
+    }
+    setSupaStatus({ testing: true, message: 'Connecting to Supabase...' });
+    saveSupabaseConfigToStorage(supaUrl, supaAnonKey);
+    const res = await testSupabaseConnection(supaUrl, supaAnonKey);
+    setSupaStatus({
+      testing: false,
+      success: res.success,
+      message: res.message,
+    });
+  };
+
+  const handlePushToSupabase = async () => {
+    setIsSyncing(true);
+    setSyncFeedback(null);
+    saveSupabaseConfigToStorage(supaUrl, supaAnonKey);
+    try {
+      const [prodRes, setRes, catRes, offRes] = await Promise.all([
+        syncProductsToSupabase(products),
+        syncSettingsToSupabase(settingsDraft),
+        syncCategoriesToSupabase(categories),
+        syncOffersToSupabase(offers),
+      ]);
+      if (prodRes && setRes && catRes && offRes) {
+        setSyncFeedback({
+          type: 'success',
+          message: 'All menu products, categories, offers, and settings pushed to Supabase successfully!',
+        });
+      } else {
+        setSyncFeedback({
+          type: 'error',
+          message: 'Some tables could not be synced. Ensure the setup SQL script has been run in your Supabase SQL Editor.',
+        });
+      }
+    } catch (e: any) {
+      setSyncFeedback({
+        type: 'error',
+        message: e?.message || 'Failed to sync with Supabase.',
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handlePullFromSupabase = async () => {
+    setIsSyncing(true);
+    setSyncFeedback(null);
+    try {
+      const [supaProducts, supaSettings, supaCategories, supaOffers] = await Promise.all([
+        fetchProductsFromSupabase(),
+        fetchSettingsFromSupabase(),
+        fetchCategoriesFromSupabase(),
+        fetchOffersFromSupabase(),
+      ]);
+
+      let count = 0;
+      if (supaProducts && supaProducts.length > 0) {
+        onUpdateProducts(supaProducts);
+        count = supaProducts.length;
+      }
+      if (supaSettings) {
+        onUpdateSettings(supaSettings);
+        setSettingsDraft(supaSettings);
+      }
+      if (supaCategories && supaCategories.length > 0) {
+        onUpdateCategories(supaCategories);
+      }
+      if (supaOffers && supaOffers.length > 0) {
+        onUpdateOffers(supaOffers);
+      }
+
+      setSyncFeedback({
+        type: 'success',
+        message: `Pulled latest data from Supabase! (${count} products loaded)`,
+      });
+    } catch (e: any) {
+      setSyncFeedback({
+        type: 'error',
+        message: e?.message || 'Failed to pull data from Supabase.',
+      });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 2500);
+  };
+
+  const handleSaveBranding = () => {
+    onUpdateSettings(settingsDraft);
+    syncSettingsToSupabase(settingsDraft).catch(() => {});
+    alert('Website logo, branding, and colors saved successfully!');
+  };
 
   // PIN Authentication
   const handlePinSubmit = (e: React.FormEvent) => {
@@ -406,6 +559,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </button>
 
               <button
+                onClick={() => setActiveTab('branding')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                  activeTab === 'branding'
+                    ? 'bg-red-600 text-white shadow'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
+              >
+                <Palette className="w-3.5 h-3.5" />
+                <span>Logo & Colors</span>
+              </button>
+
+              <button
                 onClick={() => setActiveTab('settings')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
                   activeTab === 'settings'
@@ -418,17 +583,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </button>
 
               <button
-                onClick={() => setActiveTab('orders')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
-                  activeTab === 'orders'
-                    ? 'bg-red-600 text-white shadow'
-                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
-                }`}
-              >
-                <span>📦 Recent Orders ({orders.length})</span>
-              </button>
-
-              <button
                 onClick={() => setActiveTab('database')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
                   activeTab === 'database'
@@ -436,8 +590,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
                 }`}
               >
-                <Database className="w-3.5 h-3.5" />
-                <span>Cloud & Backup</span>
+                <Cloud className="w-3.5 h-3.5" />
+                <span>Supabase Cloud DB</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('orders')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition shrink-0 cursor-pointer ${
+                  activeTab === 'orders'
+                    ? 'bg-red-600 text-white shadow'
+                    : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                }`}
+              >
+                <span>📦 Orders ({orders.length})</span>
               </button>
             </div>
 
@@ -758,6 +923,274 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             )}
 
+            {/* TAB: WEBSITE BRANDING & COLORS */}
+            {activeTab === 'branding' && (
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-bold text-white text-sm flex items-center gap-2">
+                        <Palette className="w-4 h-4 text-red-500" />
+                        <span>Logo, Website Text & Theme Colors</span>
+                      </h3>
+                      <p className="text-xs text-neutral-400">
+                        Customize your brand identity and colors with instant live preview — no coding needed
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Live Header & Brand Preview */}
+                  <div className="p-4 bg-neutral-900/80 border border-neutral-800 rounded-2xl space-y-3">
+                    <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider block">
+                      Live Preview
+                    </span>
+                    <div className="flex items-center justify-between gap-3 p-3 bg-neutral-950 rounded-xl border border-neutral-800">
+                      <div className="flex items-center gap-3">
+                        <div
+                          style={{
+                            background: settingsDraft.primaryColor
+                              ? `linear-gradient(135deg, ${settingsDraft.primaryColor}, #f59e0b)`
+                              : undefined,
+                          }}
+                          className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 via-rose-600 to-amber-500 flex items-center justify-center text-xl font-black text-white shadow-lg transform -rotate-3 overflow-hidden"
+                        >
+                          {settingsDraft.logoIconUrl ? (
+                            <img
+                              src={settingsDraft.logoIconUrl}
+                              alt="Logo"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            settingsDraft.logoBadge || 'PX'
+                          )}
+                        </div>
+                        <div>
+                          <div className="text-base font-black text-white flex items-center">
+                            {settingsDraft.logoText || 'PIZZA XPRESS'}
+                          </div>
+                          <span className="text-[11px] text-neutral-400">
+                            {settingsDraft.tagline || '100% Pure Veg • Hot & Fresh'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        style={{
+                          backgroundColor: settingsDraft.primaryColor || '#dc2626',
+                        }}
+                        className="px-3.5 py-1.5 rounded-xl text-white font-bold text-xs shadow-md"
+                      >
+                        Sample Button
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Brand Inputs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <label className="text-[11px] text-neutral-400 block mb-1">
+                        Logo Title Text (Shown in Header & Footer)
+                      </label>
+                      <input
+                        type="text"
+                        value={settingsDraft.logoText || ''}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            logoText: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. PIZZA XPRESS"
+                        className="w-full bg-neutral-900 text-white text-xs px-3 py-2 rounded-xl border border-neutral-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-neutral-400 block mb-1">
+                        Logo Badge Monogram (1-3 letters or emoji)
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={5}
+                        value={settingsDraft.logoBadge || ''}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            logoBadge: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. PX or 🍕"
+                        className="w-full bg-neutral-900 text-white text-xs px-3 py-2 rounded-xl border border-neutral-800 font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-neutral-400 block mb-1">
+                        Logo Icon / Image URL (Optional)
+                      </label>
+                      <input
+                        type="url"
+                        value={settingsDraft.logoIconUrl || ''}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            logoIconUrl: e.target.value,
+                          })
+                        }
+                        placeholder="https://... (optional image for logo)"
+                        className="w-full bg-neutral-900 text-white text-xs px-3 py-2 rounded-xl border border-neutral-800"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] text-neutral-400 block mb-1">
+                        Website Tagline / Slogan
+                      </label>
+                      <input
+                        type="text"
+                        value={settingsDraft.tagline || ''}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            tagline: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. 100% Pure Veg • Hot, Cheesy & Fast!"
+                        className="w-full bg-neutral-900 text-white text-xs px-3 py-2 rounded-xl border border-neutral-800"
+                      />
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[11px] text-neutral-400 block mb-1">
+                        Top Announcement Bar Text
+                      </label>
+                      <input
+                        type="text"
+                        value={settingsDraft.announcementText || ''}
+                        onChange={(e) =>
+                          setSettingsDraft({
+                            ...settingsDraft,
+                            announcementText: e.target.value,
+                          })
+                        }
+                        placeholder="e.g. Delivering Fresh to Thakur Tolli • Orders Accepted on WhatsApp"
+                        className="w-full bg-neutral-900 text-white text-xs px-3 py-2 rounded-xl border border-neutral-800"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Colors Customization */}
+                  <div className="pt-2 border-t border-neutral-800 space-y-3">
+                    <h4 className="font-bold text-white text-xs uppercase tracking-wider text-amber-400">
+                      Theme Color Presets & Custom Palette
+                    </h4>
+
+                    {/* Quick Color Presets */}
+                    <div className="space-y-1.5">
+                      <span className="text-[11px] text-neutral-400">Quick Palette Themes:</span>
+                      <div className="flex flex-wrap gap-2">
+                        {COLOR_PRESETS.map((p, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() =>
+                              setSettingsDraft({
+                                ...settingsDraft,
+                                primaryColor: p.primary,
+                                accentColor: p.accent,
+                              })
+                            }
+                            className="flex items-center gap-1.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 px-2.5 py-1.5 rounded-xl text-xs transition cursor-pointer"
+                          >
+                            <span
+                              className="w-3.5 h-3.5 rounded-full border border-black/40"
+                              style={{ backgroundColor: p.primary }}
+                            ></span>
+                            <span className="text-white font-medium text-[11px]">{p.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                      {/* Primary Color Picker */}
+                      <div>
+                        <label className="text-[11px] text-neutral-400 block mb-1">
+                          Primary Theme Color (Buttons, Badges, Header Highlights)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={settingsDraft.primaryColor || '#dc2626'}
+                            onChange={(e) =>
+                              setSettingsDraft({
+                                ...settingsDraft,
+                                primaryColor: e.target.value,
+                              })
+                            }
+                            className="w-9 h-9 rounded-lg border border-neutral-700 bg-neutral-900 cursor-pointer p-0.5"
+                          />
+                          <input
+                            type="text"
+                            value={settingsDraft.primaryColor || '#dc2626'}
+                            onChange={(e) =>
+                              setSettingsDraft({
+                                ...settingsDraft,
+                                primaryColor: e.target.value,
+                              })
+                            }
+                            className="flex-1 bg-neutral-900 text-white font-mono text-xs px-3 py-2 rounded-xl border border-neutral-800"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Accent Color Picker */}
+                      <div>
+                        <label className="text-[11px] text-neutral-400 block mb-1">
+                          Accent Color (Badges, Offers, Stars)
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="color"
+                            value={settingsDraft.accentColor || '#f59e0b'}
+                            onChange={(e) =>
+                              setSettingsDraft({
+                                ...settingsDraft,
+                                accentColor: e.target.value,
+                              })
+                            }
+                            className="w-9 h-9 rounded-lg border border-neutral-700 bg-neutral-900 cursor-pointer p-0.5"
+                          />
+                          <input
+                            type="text"
+                            value={settingsDraft.accentColor || '#f59e0b'}
+                            onChange={(e) =>
+                              setSettingsDraft({
+                                ...settingsDraft,
+                                accentColor: e.target.value,
+                              })
+                            }
+                            className="flex-1 bg-neutral-900 text-white font-mono text-xs px-3 py-2 rounded-xl border border-neutral-800"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 border-t border-neutral-800 flex justify-end">
+                    <button
+                      onClick={handleSaveBranding}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-lg flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Save className="w-4 h-4" />
+                      <span>Save Branding & Colors</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* TAB 4: STORE SETTINGS & WHATSAPP */}
             {activeTab === 'settings' && (
               <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -1030,24 +1463,259 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
             )}
 
-            {/* TAB 6: DATABASE & CLOUD SETUP */}
+            {/* TAB: SUPABASE CLOUD DATABASE & BACKUP */}
             {activeTab === 'database' && (
               <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs text-neutral-300">
+                {/* Supabase Connection Card */}
+                <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-emerald-950 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+                        <Cloud className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h3 className="font-black text-sm text-white flex items-center gap-2">
+                          <span>Supabase Cloud Database</span>
+                          {supaStatus?.success ? (
+                            <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-500/50 px-2 py-0.5 rounded-full font-bold">
+                              Connected
+                            </span>
+                          ) : supaUrl ? (
+                            <span className="text-[10px] bg-amber-950 text-amber-400 border border-amber-500/50 px-2 py-0.5 rounded-full font-bold">
+                              Configured
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-neutral-800 text-neutral-400 px-2 py-0.5 rounded-full font-bold">
+                              Not Connected
+                            </span>
+                          )}
+                        </h3>
+                        <p className="text-[11px] text-neutral-400">
+                          Connect Supabase so changes made here appear on the live website automatically
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Security Notice */}
+                  <div className="bg-emerald-950/40 border border-emerald-600/40 rounded-xl p-3 flex items-start gap-2.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <div className="text-[11px] space-y-1">
+                      <strong className="text-emerald-300 font-bold block">
+                        Client Security Enforced: Anon Public Key Only
+                      </strong>
+                      <p className="text-neutral-300">
+                        This dashboard only uses your Supabase <code>anon</code> public key with Row Level Security.
+                        <strong> Never enter your secret <code>service_role</code> key.</strong>
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Input Fields */}
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[11px] text-neutral-300 font-bold block mb-1">
+                        Supabase Project URL *
+                      </label>
+                      <input
+                        type="url"
+                        value={supaUrl}
+                        onChange={(e) => setSupaUrl(e.target.value)}
+                        placeholder="https://your-project-ref.supabase.co"
+                        className="w-full bg-neutral-900 text-white font-mono text-xs px-3 py-2 rounded-xl border border-neutral-800 focus:border-red-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[11px] text-neutral-300 font-bold">
+                          Supabase Anon (Public) Key *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShowAnonKey(!showAnonKey)}
+                          className="text-[10px] text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                        >
+                          {showAnonKey ? (
+                            <>
+                              <EyeOff className="w-3 h-3" /> Hide
+                            </>
+                          ) : (
+                            <>
+                              <Eye className="w-3 h-3" /> Show
+                            </>
+                          )}
+                        </button>
+                      </div>
+                      <input
+                        type={showAnonKey ? 'text' : 'password'}
+                        value={supaAnonKey}
+                        onChange={(e) => setSupaAnonKey(e.target.value)}
+                        placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                        className="w-full bg-neutral-900 text-white font-mono text-xs px-3 py-2 rounded-xl border border-neutral-800 focus:border-red-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Status Banner */}
+                  {supaStatus && (
+                    <div
+                      className={`p-3 rounded-xl border text-xs font-medium flex items-center gap-2 ${
+                        supaStatus.success
+                          ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                          : 'bg-red-950/60 border-red-500/50 text-red-300'
+                      }`}
+                    >
+                      {supaStatus.testing ? (
+                        <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                      ) : supaStatus.success ? (
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                      )}
+                      <span>{supaStatus.message}</span>
+                    </div>
+                  )}
+
+                  {/* Sync Feedback */}
+                  {syncFeedback && (
+                    <div
+                      className={`p-3 rounded-xl border text-xs font-medium flex items-center gap-2 ${
+                        syncFeedback.type === 'success'
+                          ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                          : 'bg-red-950/60 border-red-500/50 text-red-300'
+                      }`}
+                    >
+                      {syncFeedback.type === 'success' ? (
+                        <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                      )}
+                      <span>{syncFeedback.message}</span>
+                    </div>
+                  )}
+
+                  {/* Connection & Sync Action Buttons */}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleTestSupabase}
+                      disabled={supaStatus?.testing}
+                      className="bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${
+                          supaStatus?.testing ? 'animate-spin' : ''
+                        }`}
+                      />
+                      <span>Save & Test Connection</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handlePushToSupabase}
+                      disabled={isSyncing}
+                      className="bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 shadow transition cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{isSyncing ? 'Syncing...' : 'Push Local Menu to Supabase'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handlePullFromSupabase}
+                      disabled={isSyncing}
+                      className="bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Pull Live Menu from Supabase</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Step-by-Step Supabase Setup Guide */}
+                <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-white text-xs uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Step-by-Step Supabase Setup Instructions</span>
+                      </h4>
+                      <p className="text-[11px] text-neutral-400">
+                        Follow these 4 simple steps to connect your free Supabase cloud database
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopySql}
+                      className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-3 py-1.5 rounded-xl flex items-center gap-1 transition cursor-pointer"
+                    >
+                      {copiedSql ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" /> Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" /> Copy SQL Script
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-neutral-900/70 border border-neutral-800 rounded-xl space-y-1">
+                      <strong className="text-white block font-bold">
+                        1. Create Free Project
+                      </strong>
+                      <p className="text-neutral-400 text-[11px]">
+                        Go to <a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-amber-400 underline font-semibold">supabase.com</a>, sign up for free, and click <em>New Project</em>. Enter a name like "pizza-xpress".
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-neutral-900/70 border border-neutral-800 rounded-xl space-y-1">
+                      <strong className="text-white block font-bold">
+                        2. Run Setup SQL Script
+                      </strong>
+                      <p className="text-neutral-400 text-[11px]">
+                        In your Supabase project dashboard, click <strong>SQL Editor</strong> on the left sidebar. Click <strong>Copy SQL Script</strong> above, paste it in the editor, and click <strong>Run</strong>.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-neutral-900/70 border border-neutral-800 rounded-xl space-y-1">
+                      <strong className="text-white block font-bold">
+                        3. Copy Project URL & Anon Key
+                      </strong>
+                      <p className="text-neutral-400 text-[11px]">
+                        Navigate to <strong>Project Settings &gt; API</strong> in Supabase. Copy the <strong>Project URL</strong> and the <strong>anon public key</strong>.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-neutral-900/70 border border-neutral-800 rounded-xl space-y-1">
+                      <strong className="text-white block font-bold">
+                        4. Save & Push Menu
+                      </strong>
+                      <p className="text-neutral-400 text-[11px]">
+                        Paste both into the fields above, click <strong>Save & Test Connection</strong>, then click <strong>Push Local Menu to Supabase</strong>!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Local JSON Backup / Restore */}
                 <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 space-y-3">
                   <div className="flex items-center gap-2">
-                    <Database className="w-5 h-5 text-red-500" />
-                    <h3 className="font-black text-sm text-white">
-                      No-Code Menu Data & Cloud Backup
-                    </h3>
+                    <Database className="w-4 h-4 text-neutral-400" />
+                    <h4 className="font-bold text-white text-xs uppercase tracking-wider">
+                      Offline Backup & JSON Export
+                    </h4>
                   </div>
-                  <p className="text-xs text-neutral-400 leading-relaxed">
-                    All your products, prices, pictures, and store details are
-                    saved in real-time in this app's storage. You can backup your
-                    store with one click, or import menu items anytime!
+                  <p className="text-[11px] text-neutral-400">
+                    You can also export a copy of all food items and settings as a standalone file anytime.
                   </p>
 
-                  <div className="flex flex-wrap gap-2 pt-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
+                      type="button"
                       onClick={handleExportJson}
                       className="bg-neutral-800 hover:bg-neutral-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
                     >
@@ -1056,6 +1724,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                     </button>
 
                     <button
+                      type="button"
                       onClick={handleResetDefaults}
                       className="bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-800/50 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
                     >
@@ -1063,54 +1732,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       <span>Reset to Sample Menu</span>
                     </button>
                   </div>
-                </div>
 
-                {/* Import Box */}
-                <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 space-y-3">
-                  <h4 className="font-bold text-white text-xs uppercase tracking-wider text-neutral-400">
-                    Import Store Data / Restore Backup
-                  </h4>
-                  <textarea
-                    rows={4}
-                    value={jsonText}
-                    onChange={(e) => setJsonText(e.target.value)}
-                    placeholder="Paste exported store JSON data here..."
-                    className="w-full bg-neutral-900 text-white font-mono text-[11px] p-3 rounded-xl border border-neutral-800 focus:outline-none focus:border-red-500"
-                  />
-                  {jsonMessage && (
-                    <p
-                      className={`text-xs font-bold ${
-                        jsonMessage.type === 'success'
-                          ? 'text-emerald-400'
-                          : 'text-red-400'
-                      }`}
+                  <div className="pt-2">
+                    <textarea
+                      rows={3}
+                      value={jsonText}
+                      onChange={(e) => setJsonText(e.target.value)}
+                      placeholder="Or paste exported JSON here to restore..."
+                      className="w-full bg-neutral-900 text-white font-mono text-[11px] p-3 rounded-xl border border-neutral-800 focus:outline-none focus:border-red-500"
+                    />
+                    {jsonMessage && (
+                      <p
+                        className={`text-xs font-bold mt-1 ${
+                          jsonMessage.type === 'success'
+                            ? 'text-emerald-400'
+                            : 'text-red-400'
+                        }`}
+                      >
+                        {jsonMessage.text}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleImportJson}
+                      className="mt-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 font-bold text-xs px-4 py-1.5 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
                     >
-                      {jsonMessage.text}
-                    </p>
-                  )}
-                  <button
-                    onClick={handleImportJson}
-                    className="bg-amber-500 hover:bg-amber-400 text-neutral-950 font-black text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 transition cursor-pointer"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Import & Apply</span>
-                  </button>
-                </div>
-
-                {/* Firebase / Supabase Integration Instructions */}
-                <div className="bg-neutral-950 border border-neutral-800 rounded-2xl p-4 space-y-2">
-                  <h4 className="font-bold text-white text-xs uppercase tracking-wider text-amber-400">
-                    Connecting Firebase or Supabase in the Future
-                  </h4>
-                  <p className="text-neutral-400 text-xs leading-relaxed">
-                    This app is architected with a clean decoupled storage service (<code>src/services/storeService.ts</code>).
-                    To connect Firebase Firestore or Supabase:
-                  </p>
-                  <ol className="list-decimal list-inside space-y-1 text-neutral-300 text-xs pl-1">
-                    <li>Create a Firebase Project or Supabase project.</li>
-                    <li>Add a <code>products</code> collection with fields: <code>name</code>, <code>price</code>, <code>discountPrice</code>, <code>category</code>, <code>imageUrl</code>, <code>isVeg</code>, <code>isAvailable</code>.</li>
-                    <li>Add an <code>orders</code> collection to stream new orders in real-time.</li>
-                  </ol>
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Import JSON</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

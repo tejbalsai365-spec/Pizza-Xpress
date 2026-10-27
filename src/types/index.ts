@@ -57,6 +57,13 @@ export interface Offer {
   active: boolean;
 }
 
+export interface SupabaseConfig {
+  url: string;
+  anonKey: string;
+  isConnected: boolean;
+  autoSync: boolean;
+}
+
 export interface StoreSettings {
   storeName: string;
   tagline: string;
@@ -72,6 +79,14 @@ export interface StoreSettings {
   upiPayeeName: string;
   supportPhone: string;
   showOffersBanner?: boolean;
+  // Visual & Branding Customization
+  logoText?: string;
+  logoBadge?: string;
+  logoIconUrl?: string;
+  announcementText?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  supabaseConfig?: SupabaseConfig;
 }
 
 export interface Order {

@@ -43,7 +43,14 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-30 bg-neutral-950/95 backdrop-blur-md border-b border-neutral-800">
       {/* Top Banner: Store Status & Info */}
-      <div className="bg-gradient-to-r from-red-600 to-rose-700 text-white text-xs px-4 py-1.5 flex items-center justify-between font-medium">
+      <div
+        style={{
+          background: settings.primaryColor
+            ? `linear-gradient(to right, ${settings.primaryColor}, #b91c1c)`
+            : undefined,
+        }}
+        className="bg-gradient-to-r from-red-600 to-rose-700 text-white text-xs px-4 py-1.5 flex items-center justify-between font-medium"
+      >
         <div className="flex items-center gap-1.5 truncate">
           <span className="flex h-2 w-2 relative">
             <span
@@ -58,9 +65,10 @@ export const Header: React.FC<HeaderProps> = ({
             ></span>
           </span>
           <span className="truncate">
-            {settings.isOpen
-              ? `Delivering Fresh to ${settings.storeLocation}`
-              : 'Store Closed Currently • Pre-orders Accepted'}
+            {settings.announcementText ||
+              (settings.isOpen
+                ? `Delivering Fresh to ${settings.storeLocation}`
+                : 'Store Closed Currently • Pre-orders Accepted')}
           </span>
         </div>
 
@@ -84,8 +92,23 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Brand & Location */}
         <div className="flex items-center gap-3">
           <div className="relative group cursor-pointer">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 via-rose-600 to-amber-500 flex items-center justify-center shadow-lg shadow-red-900/40 text-xl font-black text-white transform -rotate-3">
-              PX
+            <div
+              style={{
+                background: settings.primaryColor
+                  ? `linear-gradient(135deg, ${settings.primaryColor}, #f59e0b)`
+                  : undefined,
+              }}
+              className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-600 via-rose-600 to-amber-500 flex items-center justify-center shadow-lg shadow-red-900/40 text-xl font-black text-white transform -rotate-3 overflow-hidden"
+            >
+              {settings.logoIconUrl ? (
+                <img
+                  src={settings.logoIconUrl}
+                  alt={settings.logoText || 'Pizza Xpress'}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                settings.logoBadge || 'PX'
+              )}
             </div>
             <div className="absolute -bottom-1 -right-1 bg-amber-400 text-neutral-950 text-[9px] font-black px-1 rounded-sm uppercase tracking-tighter">
               Hot
@@ -95,7 +118,19 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="text-xl font-black tracking-tight text-white flex items-center">
-                PIZZA <span className="text-red-500 ml-1">XPRESS</span>
+                {settings.logoText ? (
+                  <span>{settings.logoText}</span>
+                ) : (
+                  <>
+                    PIZZA{' '}
+                    <span
+                      style={{ color: settings.primaryColor || '#ef4444' }}
+                      className="text-red-500 ml-1"
+                    >
+                      XPRESS
+                    </span>
+                  </>
+                )}
               </h1>
             </div>
             {/* Location selector */}
@@ -115,6 +150,9 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Cart Button */}
         <button
           onClick={onOpenCart}
+          style={{
+            backgroundColor: settings.primaryColor || undefined,
+          }}
           className="relative flex items-center gap-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 active:scale-95 text-white px-3.5 py-2 rounded-xl font-bold text-sm shadow-lg shadow-red-600/30 transition cursor-pointer"
         >
           <div className="relative">
@@ -125,7 +163,6 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </div>
-          <span className="hidden sm:inline font-bold">₹{cartTotal}</span>
         </button>
       </div>
 

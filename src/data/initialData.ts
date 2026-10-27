@@ -1,5 +1,5 @@
 import { Category, Offer, Product, StoreSettings } from '../types';
-import cheesyKulhadImg from '../assets/cheesy_kulhad_pizza_custom.png';
+import desiCheesyKulhadNewImg from '../assets/desi_cheesy_kulhad_pizza_new.png';
 import paneerKulhadImg from '../assets/paneer_kulhad_pizza_custom.png';
 
 export const INITIAL_CATEGORIES: Category[] = [
@@ -20,7 +20,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     category: 'Kulhad Pizza',
     isVeg: true,
     isAvailable: true,
-    imageUrl: cheesyKulhadImg,
+    imageUrl: desiCheesyKulhadNewImg,
     rating: 4.9,
     ratingCount: 520,
     badge: 'Trending 🔥',
@@ -263,4 +263,9 @@ export const INITIAL_SETTINGS: StoreSettings = {
   upiPayeeName: 'Pizza Xpress',
   supportPhone: '9608995300',
   showOffersBanner: false,
+  logoText: 'PIZZA XPRESS',
+  logoBadge: 'PX',
+  primaryColor: '#dc2626',
+  accentColor: '#f59e0b',
+  announcementText: '100% Pure Veg Kitchen • Fresh Handi & Kulhad Special',
 };

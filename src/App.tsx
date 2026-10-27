@@ -41,6 +41,13 @@ import {
   ChevronRight,
   MessageCircle,
 } from 'lucide-react';
+import {
+  getSupabase,
+  fetchProductsFromSupabase,
+  fetchSettingsFromSupabase,
+  fetchCategoriesFromSupabase,
+  fetchOffersFromSupabase,
+} from './services/supabaseClient';
 
 export default function App() {
   // Store Data
@@ -84,6 +91,139 @@ export default function App() {
       console.error(e);
     }
   }, [cartItems]);
+
+  // Apply dynamic theme colors to root document
+  useEffect(() => {
+    if (settings.primaryColor) {
+      document.documentElement.style.setProperty('--color-primary', settings.primaryColor);
+    }
+    if (settings.accentColor) {
+      document.documentElement.style.setProperty('--color-accent', settings.accentColor);
+    }
+  }, [settings.primaryColor, settings.accentColor]);
+
+  // Supabase Hydration & Realtime Subscription
+  useEffect(() => {
+    let isMounted = true;
+
+    const hydrateFromSupabase = async () => {
+      try {
+        const client = getSupabase();
+        if (!client) return;
+
+        const [supaProducts, supaSettings, supaCategories, supaOffers] =
+          await Promise.all([
+            fetchProductsFromSupabase(),
+            fetchSettingsFromSupabase(),
+            fetchCategoriesFromSupabase(),
+            fetchOffersFromSupabase(),
+          ]);
+
+        if (!isMounted) return;
+
+        if (supaProducts && supaProducts.length > 0) {
+          setProducts(supaProducts);
+          try {
+            localStorage.setItem(
+              'pizza_xpress_products_v8',
+              JSON.stringify(supaProducts)
+            );
+          } catch {}
+        }
+
+        if (supaSettings) {
+          setSettings((prev) => ({ ...prev, ...supaSettings }));
+          try {
+            localStorage.setItem(
+              'pizza_xpress_settings_v2',
+              JSON.stringify(supaSettings)
+            );
+          } catch {}
+        }
+
+        if (supaCategories && supaCategories.length > 0) {
+          setCategories(supaCategories);
+          try {
+            localStorage.setItem(
+              'pizza_xpress_categories_v3',
+              JSON.stringify(supaCategories)
+            );
+          } catch {}
+        }
+
+        if (supaOffers && supaOffers.length > 0) {
+          setOffers(supaOffers);
+          try {
+            localStorage.setItem(
+              'pizza_xpress_offers_v1',
+              JSON.stringify(supaOffers)
+            );
+          } catch {}
+        }
+      } catch (err) {
+        console.warn('Initial Supabase hydration:', err);
+      }
+    };
+
+    hydrateFromSupabase();
+
+    // Listen for Realtime postgres_changes
+    const client = getSupabase();
+    if (client) {
+      const channel = client
+        .channel('public:realtime-menu')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'products' },
+          async () => {
+            const updated = await fetchProductsFromSupabase();
+            if (updated && updated.length > 0 && isMounted) {
+              setProducts(updated);
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'store_settings' },
+          async () => {
+            const updated = await fetchSettingsFromSupabase();
+            if (updated && isMounted) {
+              setSettings((prev) => ({ ...prev, ...updated }));
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'categories' },
+          async () => {
+            const updated = await fetchCategoriesFromSupabase();
+            if (updated && updated.length > 0 && isMounted) {
+              setCategories(updated);
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'offers' },
+          async () => {
+            const updated = await fetchOffersFromSupabase();
+            if (updated && updated.length > 0 && isMounted) {
+              setOffers(updated);
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        isMounted = false;
+        client.removeChannel(channel);
+      };
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Cart calculations
   const cartCount = useMemo(() => {
@@ -459,10 +599,24 @@ export default function App() {
         <div className="mt-8 px-4 py-6 border-t border-neutral-900 text-center space-y-3">
           <div className="flex items-center justify-center gap-2">
             <span className="font-black text-white text-base">
-              PIZZA <span className="text-red-500">XPRESS</span>
+              {settings.logoText ? (
+                <span>{settings.logoText}</span>
+              ) : (
+                <>
+                  PIZZA{' '}
+                  <span
+                    style={{ color: settings.primaryColor || '#ef4444' }}
+                    className="text-red-500"
+                  >
+                    XPRESS
+                  </span>
+                </>
+              )}
             </span>
             <span className="text-neutral-600">•</span>
-            <span className="text-xs text-neutral-400">Thakur Tolli Kitchen</span>
+            <span className="text-xs text-neutral-400">
+              {settings.tagline || `${settings.storeLocation} Kitchen`}
+            </span>
           </div>
           <p className="text-xs text-neutral-500 max-w-sm mx-auto">
             Order directly via WhatsApp at{' '}
@@ -498,6 +652,11 @@ export default function App() {
         <div className="fixed bottom-4 inset-x-0 z-40 max-w-md mx-auto px-4">
           <button
             onClick={() => setIsCartOpen(true)}
+            style={{
+              background: settings.primaryColor
+                ? `linear-gradient(to right, ${settings.primaryColor}, #e11d48, #d97706)`
+                : undefined,
+            }}
             className="w-full bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white rounded-2xl p-3.5 shadow-2xl shadow-red-950/80 flex items-center justify-between transition-all transform hover:scale-[1.02] active:scale-95 cursor-pointer ring-1 ring-white/20"
           >
             <div className="flex items-center gap-3">
